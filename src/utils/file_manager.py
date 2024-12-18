@@ -4,15 +4,19 @@ from typing import Tuple, List
 class FileManager:
     """Manages file operations and directory structure."""
     
-    def __init__(self, base_dir: str = "downloads", clips_dir: str = "clips"):
+    def __init__(self, base_dir: str = "downloads"):
         self.base_dir = base_dir
-        self.clips_dir = clips_dir
         os.makedirs(base_dir, exist_ok=True)
-        os.makedirs(clips_dir, exist_ok=True)
     
     def get_video_folder(self, video_id: str) -> str:
         """Get the folder path for a specific video."""
         return os.path.join(self.base_dir, video_id)
+    
+    def get_clips_folder(self, video_id: str) -> str:
+        """Get the clips folder path for a specific video."""
+        clips_folder = os.path.join(self.get_video_folder(video_id), "parts")
+        os.makedirs(clips_folder, exist_ok=True)
+        return clips_folder
     
     def check_existing_files(self, video_id: str) -> Tuple[str, List[str]]:
         """Check if video or its clips already exist.
@@ -27,11 +31,12 @@ class FileManager:
                     return video_path, []
         
         # Check clips folder for existing clips from this video
+        clips_folder = self.get_clips_folder(video_id)
         existing_clips = []
-        if os.path.exists(self.clips_dir):
-            for filename in os.listdir(self.clips_dir):
+        if os.path.exists(clips_folder):
+            for filename in os.listdir(clips_folder):
                 if filename.startswith(video_id) and filename.endswith(".mp4"):
-                    clip_path = os.path.join(self.clips_dir, filename)
+                    clip_path = os.path.join(clips_folder, filename)
                     existing_clips.append(clip_path)
         
         if existing_clips:
@@ -57,16 +62,31 @@ class FileManager:
         os.makedirs(folder_path, exist_ok=True)
         return folder_path
     
-    def get_clip_path(self, video_id: str, start_time: int, description: str) -> str:
-        """Generate path for a clip file."""
-        safe_desc = "".join(c if c.isalnum() else "_" for c in description[:30])
-        filename = f"{video_id}_{start_time}_{safe_desc}.mp4"
-        return os.path.join(self.clips_dir, filename)
+    def format_time(self, seconds: int) -> str:
+        """Convert seconds to MM:SS format."""
+        minutes = seconds // 60
+        remaining_seconds = seconds % 60
+        return f"{minutes:02d}m{remaining_seconds:02d}s"
     
-    def get_compilation_path(self, timestamp: str = None) -> str:
+    def get_clip_path(self, video_id: str, start_time: int, description: str, end_time: int = None) -> str:
+        """Generate path for a clip file."""
+        # Convert times to readable format
+        start_time_str = self.format_time(start_time)
+        time_str = start_time_str
+        
+        if end_time is not None:
+            end_time_str = self.format_time(end_time)
+            time_str = f"{start_time_str}_to_{end_time_str}"
+        
+        # Clean up description
+        safe_desc = "".join(c if c.isalnum() else "_" for c in description[:30])
+        filename = f"{video_id}_{time_str}_{safe_desc}.mp4"
+        return os.path.join(self.get_clips_folder(video_id), filename)
+    
+    def get_compilation_path(self, video_id: str, timestamp: str = None) -> str:
         """Generate path for a compilation file."""
         if timestamp is None:
             from datetime import datetime
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"compilation_{timestamp}.mp4"
-        return os.path.join(self.clips_dir, filename) 
+        return os.path.join(self.get_video_folder(video_id), filename) 

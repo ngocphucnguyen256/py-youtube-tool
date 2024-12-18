@@ -110,12 +110,6 @@ def main():
             print("Skipping to next video...")
             continue
     
-    # Create compilation from all clips
-    if all_clip_paths:
-        compilation_path = processor.merge_clips(all_clip_paths)
-        if compilation_path:
-            print(f"\nCompilation saved to: {compilation_path}")
-    
     print(f"\nProcessing complete! Total clips created: {len(all_clip_paths)}")
 
 if __name__ == "__main__":
