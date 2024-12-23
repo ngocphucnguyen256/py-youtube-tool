@@ -1,12 +1,16 @@
 import os
 from typing import Tuple, List
+import shutil
+import psutil
+import time
 
 class FileManager:
     """Manages file operations and directory structure."""
     
-    def __init__(self, base_dir: str = "downloads"):
+    def __init__(self, base_dir: str = "downloads", min_free_space_gb=10):
         self.base_dir = base_dir
         os.makedirs(base_dir, exist_ok=True)
+        self.min_free_space_gb = min_free_space_gb
     
     def get_video_folder(self, video_id: str) -> str:
         """Get the folder path for a specific video."""
@@ -90,3 +94,25 @@ class FileManager:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"compilation_{timestamp}.mp4"
         return os.path.join(self.get_video_folder(video_id), filename) 
+    
+    def check_disk_space(self) -> bool:
+        """Check if there's enough disk space"""
+        disk = psutil.disk_usage('.')
+        free_gb = disk.free / (1024**3)
+        if free_gb < self.min_free_space_gb:
+            print(f"Warning: Low disk space! Only {free_gb:.1f}GB free")
+            return False
+        return True
+    
+    def cleanup_old_files(self, days_old=7):
+        """Remove files older than specified days"""
+        current_time = time.time()
+        for root, _, files in os.walk('data'):
+            for f in files:
+                path = os.path.join(root, f)
+                if os.stat(path).st_mtime < current_time - (days_old * 86400):
+                    try:
+                        os.remove(path)
+                        print(f"Removed old file: {f}")
+                    except:
+                        pass 

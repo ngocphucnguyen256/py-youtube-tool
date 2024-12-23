@@ -8,8 +8,8 @@ class VideoDownloader:
     def __init__(self, output_base_dir: str = "downloads"):
         self.output_base_dir = output_base_dir
         self.default_options = {
-            # Format selection
-            'format': 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/b',
+            # Format selection for better quality
+            'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
             'merge_output_format': 'mp4',
             
             # Download settings
@@ -32,6 +32,16 @@ class VideoDownloader:
             # SSL settings
             'nocheckcertificate': True,
             'no_check_certificate': True,
+            
+            # Video quality settings
+            'format_sort': ['res:1080', 'ext:mp4:m4a', 'size'],
+            'postprocessor_args': [
+                '-codec:v', 'libx264',
+                '-crf', '18',  # Lower CRF means higher quality (range: 0-51)
+                '-preset', 'slow',  # Slower preset means better compression
+                '-codec:a', 'aac',
+                '-b:a', '192k'  # Higher audio bitrate
+            ],
             
             # Headers
             'http_headers': {
@@ -79,36 +89,14 @@ class VideoDownloader:
                 print(f"Found existing complete video: {complete_file}")
                 return complete_file
         
-        # Check for existing parts
-        video_part = os.path.join(video_dir, f"{video_id}.f612.mp4")
-        audio_part = os.path.join(video_dir, f"{video_id}.f140.m4a")
-        
-        if os.path.exists(video_part) and os.path.exists(audio_part):
-            print("Found existing video and audio parts, attempting to merge...")
-            try:
-                import ffmpeg
-                output_file = os.path.join(video_dir, f"{video_id}.mp4")
-                
-                # Merge video and audio using ffmpeg
-                video_stream = ffmpeg.input(video_part)
-                audio_stream = ffmpeg.input(audio_part)
-                stream = ffmpeg.output(video_stream, audio_stream, output_file, vcodec='copy', acodec='aac')
-                ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
-                
-                print(f"Successfully merged parts into: {output_file}")
-                return output_file
-            except Exception as e:
-                print(f"Failed to merge parts: {str(e)}")
-                print("Will try downloading as single file...")
-        
-        # If no existing files or merge failed, download as single file
+        # If no existing files, download as single file
         url = f"https://www.youtube.com/watch?v={video_id}"
         output_template = os.path.join(video_dir, '%(id)s.%(ext)s')
         
         try:
-            # Configure yt-dlp options
+            # Configure yt-dlp options with better quality
             options = {
-                'format': 'best[height<=720][ext=mp4]/best[height<=720]',  # Simpler format selection
+                'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',  # Up to 1080p
                 'outtmpl': output_template,
                 'quiet': False,
                 'no_warnings': False,
@@ -125,11 +113,26 @@ class VideoDownloader:
                 'fragment_retries': 10,
                 'skip_download': False,
                 'overwrites': True,
-                'verbose': True
+                'verbose': True,
+                # Video quality settings
+                'format_sort': ['res:1080', 'ext:mp4:m4a', 'size'],
+                'merge_output_format': 'mp4'
             }
             
             # Download video
             with yt_dlp.YoutubeDL(options) as ydl:
+                print("\nFetching available formats...")
+                info = ydl.extract_info(url, download=False)
+                print("\nSelected format:")
+                if 'formats' in info:
+                    selected = next((f for f in info['formats'] if f.get('format_id') == info.get('format_id')), None)
+                    if selected:
+                        print(f"Resolution: {selected.get('height', 'unknown')}p")
+                        print(f"Video codec: {selected.get('vcodec', 'unknown')}")
+                        print(f"Audio codec: {selected.get('acodec', 'unknown')}")
+                        print(f"Filesize: {selected.get('filesize_approx', 0) / 1024 / 1024:.1f} MB (approximate)")
+                
+                print("\nDownloading video...")
                 error_code = ydl.download([url])
                 if error_code != 0:
                     raise Exception(f"yt-dlp returned error code: {error_code}")

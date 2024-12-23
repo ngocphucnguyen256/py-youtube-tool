@@ -2,3 +2,32 @@ client_secrets.json
 clips/
 /downloads/
 .env
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.env
+.venv/
+venv/
+ENV/
+
+# Project specific
+data/
+downloads/
+backups/
+logs/
+client_secrets.json
+processed_videos.db
+temp_concat_*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS specific
+.DS_Store
+Thumbs.db

@@ -3,6 +3,7 @@ from typing import List, Optional
 import google_auth_oauthlib.flow
 import googleapiclient.discovery
 import googleapiclient.errors
+from googleapiclient.http import MediaFileUpload
 
 class YouTubeAPI:
     """Handles all interactions with YouTube API."""
@@ -10,26 +11,55 @@ class YouTubeAPI:
     def __init__(self, client_secrets_file: str, api_scopes: List[str]):
         self.client_secrets_file = client_secrets_file
         self.api_scopes = api_scopes
-        self.service = None
+        self.youtube = None
+        self.credentials = None
     
     def authenticate(self):
-        """Authenticate with YouTube API."""
+        """Single authentication for all YouTube operations"""
         print("Starting authentication process...")
         flow = google_auth_oauthlib.flow.InstalledAppFlow.from_client_secrets_file(
             self.client_secrets_file, self.api_scopes
         )
-        credentials = flow.run_local_server(port=0)
-        print("Authentication successful!")
-        
-        self.service = googleapiclient.discovery.build(
-            "youtube", "v3", credentials=credentials
+        self.credentials = flow.run_local_server(port=0)
+        self.youtube = googleapiclient.discovery.build(
+            "youtube", "v3", credentials=self.credentials
         )
+        print("Authentication successful!")
+    
+    def upload_video(self, video_path: str, title: str, description: str = "", 
+                    privacy_status: str = "private", tags: List[str] = None):
+        """Upload video using the same authenticated client"""
+        if not self.youtube:
+            raise Exception("YouTube API not authenticated")
+
+        body = {
+            'snippet': {
+                'title': title,
+                'description': description,
+                'tags': tags or []
+            },
+            'status': {
+                'privacyStatus': privacy_status
+            }
+        }
+
+        insert_request = self.youtube.videos().insert(
+            part=','.join(body.keys()),
+            body=body,
+            media_body=MediaFileUpload(
+                video_path, 
+                chunksize=-1, 
+                resumable=True
+            )
+        )
+
+        return self._resumable_upload(insert_request)
     
     def get_channel_id_from_username(self, username: str) -> Optional[str]:
         """Get channel ID from username."""
         print(f"Looking up channel ID for username: {username}")
         try:
-            request = self.service.channels().list(
+            request = self.youtube.channels().list(
                 part="id",
                 forUsername=username
             )
@@ -50,7 +80,8 @@ class YouTubeAPI:
         """Search for a channel by name or custom URL."""
         print(f"Searching for channel: {query}")
         try:
-            request = self.service.search().list(
+            # First try exact channel name
+            request = self.youtube.search().list(
                 part="id,snippet",
                 q=query,
                 type="channel",
@@ -63,40 +94,66 @@ class YouTubeAPI:
                 channel_title = response['items'][0]['snippet']['title']
                 print(f"Found channel: {channel_title} (ID: {channel_id})")
                 return channel_id
-            else:
-                print("Channel not found")
-                return None
+            
+            # If not found, try with @handle
+            if not query.startswith('@'):
+                return self.search_channel(f"@{query}")
+            
+            print("Channel not found")
+            return None
         except Exception as e:
             print(f"Error searching for channel: {str(e)}")
             return None
     
     def get_channel_videos(self, channel_id: str, max_results: int = 10) -> List[str]:
         """Get recent videos from a channel."""
-        print(f"\nFetching {max_results} most recent videos from channel {channel_id}...")
+        print(f"\nFetching videos from channel {channel_id}...")
         try:
-            request = self.service.search().list(
-                part="id,snippet",
-                channelId=channel_id,
-                order="date",
-                maxResults=max_results,
-                type="video"
-            )
-            response = request.execute()
-            
-            if 'items' not in response:
-                print("Error: No 'items' in response")
-                print("Full response:", response)
+            # First try with uploads playlist
+            channel_request = self.youtube.channels().list(
+                part="contentDetails",
+                id=channel_id
+            ).execute()
+
+            if not channel_request.get('items'):
+                # Try with channel username
+                channel_request = self.youtube.channels().list(
+                    part="contentDetails",
+                    forUsername=channel_id
+                ).execute()
+
+            if not channel_request.get('items'):
+                print(f"No channel found with ID or username: {channel_id}")
                 return []
-                
+
+            # Get uploads playlist ID
+            uploads_playlist_id = channel_request['items'][0]['contentDetails']['relatedPlaylists']['uploads']
+            
+            # Get videos from uploads playlist
             videos = []
-            for item in response["items"]:
-                video_id = item["id"]["videoId"]
-                title = item["snippet"]["title"]
-                videos.append(video_id)
-                print(f"Found video: {title} (ID: {video_id})")
+            next_page_token = None
+            
+            while len(videos) < max_results:
+                playlist_request = self.youtube.playlistItems().list(
+                    part="snippet",
+                    playlistId=uploads_playlist_id,
+                    maxResults=min(50, max_results - len(videos)),
+                    pageToken=next_page_token
+                ).execute()
+                
+                for item in playlist_request['items']:
+                    video_id = item['snippet']['resourceId']['videoId']
+                    title = item['snippet']['title']
+                    videos.append(video_id)
+                    print(f"Found video: {title} (ID: {video_id})")
+                
+                next_page_token = playlist_request.get('nextPageToken')
+                if not next_page_token:
+                    break
             
             print(f"Total videos found: {len(videos)}")
-            return videos
+            return videos[:max_results]
+            
         except Exception as e:
             print(f"Error fetching videos: {str(e)}")
             return []
@@ -105,7 +162,7 @@ class YouTubeAPI:
         """Get comments from specific commenters on a video."""
         print(f"\nFetching comments for video {video_id}...")
         
-        request = self.service.commentThreads().list(
+        request = self.youtube.commentThreads().list(
             part="snippet",
             videoId=video_id,
             maxResults=100,
@@ -125,3 +182,27 @@ class YouTubeAPI:
                 })
         
         return comments 
+    
+    def get_video_info(self, video_id: str) -> dict:
+        """Get video details including title, description, etc."""
+        try:
+            request = self.youtube.videos().list(
+                part="snippet",
+                id=video_id
+            )
+            response = request.execute()
+            
+            if not response.get('items'):
+                print(f"No video found with ID: {video_id}")
+                return {
+                    'title': f'Video_{video_id}',
+                    'description': ''
+                }
+            
+            return response['items'][0]['snippet']
+        except Exception as e:
+            print(f"Error getting video info: {str(e)}")
+            return {
+                'title': f'Video_{video_id}',
+                'description': ''
+            }
