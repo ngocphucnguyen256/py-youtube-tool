@@ -36,24 +36,47 @@ class YouTubeAPI:
             'snippet': {
                 'title': title,
                 'description': description,
-                'tags': tags or []
+                'tags': tags or [],
+                'categoryId': '22'  # People & Blogs category
             },
             'status': {
-                'privacyStatus': privacy_status
+                'privacyStatus': privacy_status,
+                'selfDeclaredMadeForKids': False
             }
         }
 
+        # Create upload request
         insert_request = self.youtube.videos().insert(
             part=','.join(body.keys()),
             body=body,
             media_body=MediaFileUpload(
                 video_path, 
-                chunksize=-1, 
-                resumable=True
+                chunksize=1024*1024,  # 1MB chunks
+                resumable=True,
+                mimetype='video/mp4'
             )
         )
 
-        return self._resumable_upload(insert_request)
+        print(f"\nStarting upload of {os.path.basename(video_path)}...")
+        response = None
+        while response is None:
+            try:
+                status, response = insert_request.next_chunk()
+                if status:
+                    progress = int(status.progress() * 100)
+                    # Clear line and show progress
+                    print(f"\rUploading... [{progress}%] {'=' * (progress//2)}>{' ' * (50-progress//2)}", end='')
+            except Exception as e:
+                print(f"\nError during upload: {str(e)}")
+                return None
+
+        if response:
+            print(f"\nUpload complete! Video ID: {response['id']}")
+            print(f"Video URL: https://youtu.be/{response['id']}")
+            return response['id']
+        else:
+            print("\nUpload failed")
+            return None
     
     def get_channel_id_from_username(self, username: str) -> Optional[str]:
         """Get channel ID from username."""

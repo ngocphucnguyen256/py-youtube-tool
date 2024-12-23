@@ -3,6 +3,7 @@ from typing import List, Tuple
 from datetime import datetime
 import subprocess
 from src.utils.file_manager import FileManager
+import json
 
 class VideoProcessor:
     """Handles video processing operations like clipping and merging."""
@@ -12,74 +13,92 @@ class VideoProcessor:
     
     def clip_video(self, input_path: str, output_path: str, start_time: int, end_time: int) -> bool:
         """Create a clip from a video using stream copy when possible."""
-        print(f"\nClipping video segment...")
-        print(f"Input file: {input_path}")
-        print(f"Output file: {output_path}")
-        print(f"Time range: {self.file_manager.format_time(start_time)} -> {self.file_manager.format_time(end_time)}")
-        
         try:
-            # Use ffmpeg directly for faster clipping without re-encoding
+            # First get video info
+            probe_cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-print_format', 'json',
+                '-show_format', '-show_streams',
+                input_path
+            ]
+            probe_output = subprocess.check_output(probe_cmd).decode('utf-8')
+            video_info = json.loads(probe_output)
+            
+            # Get video stream info
+            video_stream = next((s for s in video_info['streams'] if s['codec_type'] == 'video'), None)
+            if video_stream:
+                width = int(video_stream.get('width', 1920))
+                height = int(video_stream.get('height', 1080))
+                bitrate = video_stream.get('bit_rate', '4M')
+                
+                print(f"\nOriginal video: {width}x{height} @ {int(int(bitrate)/1000000)}Mbps")
+            
+            # Use ffmpeg with high quality settings
             ffmpeg_cmd = [
                 'ffmpeg', '-i', input_path,
                 '-ss', str(start_time),
                 '-to', str(end_time),
-                '-c', 'copy',  # Copy streams without re-encoding
-                '-avoid_negative_ts', 'make_zero',
+                '-c:v', 'libx264',  # Use x264 codec
+                '-preset', 'slow',   # Slower encoding = better quality
+                '-crf', '18',       # Lower CRF = higher quality (18-23 is visually lossless)
+                '-c:a', 'aac',      # AAC audio codec
+                '-b:a', '192k',     # Audio bitrate
+                '-movflags', '+faststart',  # Enable streaming
                 output_path
             ]
             
+            print("\nProcessing clip with high quality settings...")
             subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
-            print("\nClip creation complete!")
-            print(f"Saved to: {output_path}")
+            print(f"Clip creation complete: {os.path.basename(output_path)}")
             return True
             
         except subprocess.CalledProcessError as e:
             print(f"Error during clipping: {e.stderr.decode()}")
-            print(f"Failed to create clip: {os.path.basename(output_path)}")
+            return False
+        except Exception as e:
+            print(f"Error processing clip: {str(e)}")
             return False
     
     def merge_clips(self, clip_paths: List[str], video_id: str) -> str:
-        """Merge multiple clips using concat demuxer to avoid re-encoding."""
+        """Merge multiple clips with high quality settings."""
         if not clip_paths:
             print("No clips to merge")
             return None
         
         output_path = self.file_manager.get_compilation_path(video_id)
-        print(f"\nCreating compilation video...")
-        print(f"Number of clips to merge: {len(clip_paths)}")
-        print(f"Output file: {output_path}")
+        print(f"\nCreating high quality compilation...")
         
         try:
-            # Create a temporary file listing all clips
+            # Create concat file
             concat_file = f"temp_concat_{video_id}.txt"
             with open(concat_file, 'w') as f:
                 for clip_path in clip_paths:
                     f.write(f"file '{os.path.abspath(clip_path)}'\n")
             
-            # Use ffmpeg concat demuxer
+            # Merge with high quality settings
             ffmpeg_cmd = [
                 'ffmpeg', '-f', 'concat',
                 '-safe', '0',
                 '-i', concat_file,
-                '-c', 'copy',  # Copy streams without re-encoding
+                '-c:v', 'libx264',
+                '-preset', 'slow',
+                '-crf', '18',
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-movflags', '+faststart',
                 output_path
             ]
             
             subprocess.run(ffmpeg_cmd, check=True, capture_output=True)
-            print("\nCompilation complete!")
-            print(f"Saved to: {output_path}")
+            print(f"Compilation complete: {os.path.basename(output_path)}")
             return output_path
             
         except subprocess.CalledProcessError as e:
             print(f"Error creating compilation: {e.stderr.decode()}")
             return None
-            
         finally:
-            # Clean up concat file
-            try:
+            if os.path.exists(concat_file):
                 os.remove(concat_file)
-            except:
-                pass
     
     def process_segments(self, video_path: str, segments: List[Tuple[int, int, str]], video_id: str) -> Tuple[List[str], str]:
         """Process multiple segments with progress tracking.
