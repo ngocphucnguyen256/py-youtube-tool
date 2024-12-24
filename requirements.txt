@@ -14,5 +14,4 @@ tqdm>=4.67.1
 requests>=2.32.3
 urllib3>=2.3.0
 certifi>=2024.12.14
-psutil>=5.9.8
 ffmpeg-python>=0.2.0

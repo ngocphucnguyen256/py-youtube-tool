@@ -3,13 +3,13 @@
 This application automatically clips and reuploads specific segments from ASMR videos based on timestamps in comments.
 
 ## Features
-- Automatically fetches videos from specified YouTube channel
+- Automatically fetches videos from specified YouTube playlist or channel
 - Extracts timestamps from comments
 - Creates high-quality compilations from selected segments
 - Maintains original video quality settings
 - Advanced keyword filtering with inclusion and exclusion
 - Scheduled or immediate processing modes
-- Database tracking to prevent duplicate processing
+- Smart duplicate detection using YouTube API
 - Automatic cleanup of temporary files
 
 ## Setup
@@ -45,8 +45,11 @@ cp .env-example .env
 
 5. Configure your `.env` file:
 ```env
-# Channel to process
-CHANNEL_ID=                # Target channel ID or @handle
+# Source to process (choose one)
+PLAYLIST_ID=              # YouTube playlist ID to fetch videos from
+CHANNEL_ID=              # Optional: Channel ID or @handle (for --channel mode)
+
+# Processing settings
 TIMESTAMP_COMMENTERS=      # Users who post timestamps
 KEYWORDS=                  # Keywords to look for in timestamps
 KEYWORDS_EXCLUDE=          # Keywords to exclude from matched segments
@@ -64,7 +67,7 @@ UPLOAD_TIMES=10:00,18:00  # When to check for new videos
 
 ### Running Modes
 
-1. Schedule Mode (default):
+1. Schedule Mode (default, using playlist):
 ```bash
 python main.py
 ```
@@ -72,9 +75,17 @@ python main.py
 - Checks for new videos at scheduled times
 - Processes and uploads automatically
 
-2. Immediate Mode:
+2. Schedule Mode (using channel):
 ```bash
-python main.py -i
+python main.py --channel
+```
+- Same as above but fetches from channel instead of playlist
+- Note: Can only access public videos when using channel mode
+
+3. Immediate Mode:
+```bash
+python main.py -i  # For playlist
+python main.py -i --channel  # For channel
 ```
 - Processes one video immediately
 - Then switches to schedule mode
@@ -88,27 +99,9 @@ The application uses two levels of keyword filtering:
 
 This allows for precise control over which segments are included in the compilation.
 
-### Database Management
-
-View database contents:
-```bash
-python tools/db_viewer.py
-```
-
-Manage database (includes viewing and clearing):
-```bash
-python tools/manage_db.py
-```
-
-Database management options:
-1. View all entries
-2. View statistics
-3. Clear database (with backup)
-4. Clear database (no backup)
-
 ## Process Flow
-1. Fetches videos from specified channel
-2. Checks for existing processing in database
+1. Fetches videos from specified playlist or channel
+2. Checks for existing uploads on YouTube
 3. Downloads video if new
 4. Extracts timestamps from comments
 5. Filters segments using keywords and exclusions
@@ -120,11 +113,9 @@ Database management options:
 ## Shutdown
 - Press Ctrl+C for graceful shutdown
 - Current operations will complete before exit
-- Database maintains processing state
+- Temporary files are cleaned up automatically
 
 ## Files
 - `main.py`: Main application script
-- `tools/db_viewer.py`: Database viewing utility
-- `tools/manage_db.py`: Database management utility
 - `.env`: Configuration file
 - `client_secrets.json`: YouTube API credentials

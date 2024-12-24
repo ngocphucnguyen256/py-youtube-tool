@@ -128,8 +128,14 @@ class YouTubeAPI:
             print(f"Error searching for channel: {str(e)}")
             return None
     
-    def get_channel_videos(self, channel_id: str, max_results: int = 10) -> List[str]:
-        """Get recent videos from a channel."""
+    def get_channel_videos(self, channel_id: str, max_results: int = 50, start_index: int = 0) -> List[str]:
+        """Get recent videos from a channel.
+        
+        Args:
+            channel_id: The channel ID or username
+            max_results: Maximum number of videos to return
+            start_index: Skip this many videos before starting to return results
+        """
         print(f"\nFetching videos from channel {channel_id}...")
         try:
             # First try with uploads playlist
@@ -152,30 +158,38 @@ class YouTubeAPI:
             # Get uploads playlist ID
             uploads_playlist_id = channel_request['items'][0]['contentDetails']['relatedPlaylists']['uploads']
             
-            # Get videos from uploads playlist
-            videos = []
+            # Get videos from uploads playlist with pagination
+            all_videos = []
             next_page_token = None
             
-            while len(videos) < max_results:
+            # First, collect enough videos to reach start_index + max_results
+            target_count = start_index + max_results
+            
+            while len(all_videos) < target_count:
                 playlist_request = self.youtube.playlistItems().list(
                     part="snippet",
                     playlistId=uploads_playlist_id,
-                    maxResults=min(50, max_results - len(videos)),
+                    maxResults=50,  # Maximum allowed by API
                     pageToken=next_page_token
                 ).execute()
                 
                 for item in playlist_request['items']:
                     video_id = item['snippet']['resourceId']['videoId']
                     title = item['snippet']['title']
-                    videos.append(video_id)
-                    print(f"Found video: {title} (ID: {video_id})")
+                    all_videos.append((video_id, title))
                 
                 next_page_token = playlist_request.get('nextPageToken')
                 if not next_page_token:
                     break
             
-            print(f"Total videos found: {len(videos)}")
-            return videos[:max_results]
+            # Return the requested slice
+            result_videos = []
+            for video_id, title in all_videos[start_index:start_index + max_results]:
+                result_videos.append(video_id)
+                print(f"Found video: {title} (ID: {video_id})")
+            
+            print(f"Total videos in this batch: {len(result_videos)}")
+            return result_videos
             
         except Exception as e:
             print(f"Error fetching videos: {str(e)}")
@@ -230,32 +244,88 @@ class YouTubeAPI:
                 'description': ''
             }
     
-    def check_if_uploaded(self, title: str) -> bool:
-        """Check if a video with this title already exists on the channel"""
+    def check_if_uploaded(self, video_id: str) -> bool:
+        """Check if we've already uploaded a compilation for this video ID.
+        
+        Args:
+            video_id: The original video ID to check
+        """
         try:
-            print(f"Searching for video with title: {title}")
-            # Search for videos on your channel with this title
+            print(f"Checking if video {video_id} was already processed...")
+            # Search for videos on your channel that mention this ID in description
             request = self.youtube.search().list(
                 part="snippet",
-                q=title,
+                q=f"Original video: https://youtu.be/{video_id}",
                 type="video",
                 forMine=True,
-                maxResults=1
+                maxResults=50  # Check more videos to be sure
             )
             response = request.execute()
             
             if response.get('items'):
-                found_title = response['items'][0]['snippet']['title']
-                print(f"Found existing upload: {found_title}")
-                if found_title == title:
-                    print("Exact title match found")
-                    return True
-                else:
-                    print("Similar title found but not exact match")
-                    return False
+                for item in response['items']:
+                    # Get full video details to check description
+                    video_request = self.youtube.videos().list(
+                        part="snippet",
+                        id=item['id']['videoId']
+                    ).execute()
+                    
+                    if video_request['items']:
+                        description = video_request['items'][0]['snippet']['description']
+                        if f"Original video: https://youtu.be/{video_id}" in description:
+                            print(f"Found existing compilation for video {video_id}")
+                            return True
             
-            print("No existing upload found")
+            print("No existing compilation found")
             return False
+            
         except Exception as e:
             print(f"Error checking for existing upload: {e}")
             return False
+    
+    def get_playlist_videos(self, playlist_id: str, max_results: int = 50, start_index: int = 0) -> List[str]:
+        """Get videos from a playlist.
+        
+        Args:
+            playlist_id: The playlist ID
+            max_results: Maximum number of videos to return
+            start_index: Skip this many videos before starting to return results
+        """
+        print(f"\nFetching videos from playlist {playlist_id}...")
+        try:
+            # Get videos from playlist with pagination
+            all_videos = []
+            next_page_token = None
+            
+            # First, collect enough videos to reach start_index + max_results
+            target_count = start_index + max_results
+            
+            while len(all_videos) < target_count:
+                playlist_request = self.youtube.playlistItems().list(
+                    part="snippet",
+                    playlistId=playlist_id,
+                    maxResults=50,  # Maximum allowed by API
+                    pageToken=next_page_token
+                ).execute()
+                
+                for item in playlist_request['items']:
+                    video_id = item['snippet']['resourceId']['videoId']
+                    title = item['snippet']['title']
+                    all_videos.append((video_id, title))
+                    print(f"Found video: {title} (ID: {video_id})")
+                
+                next_page_token = playlist_request.get('nextPageToken')
+                if not next_page_token:
+                    break
+            
+            # Return the requested slice
+            result_videos = []
+            for video_id, title in all_videos[start_index:start_index + max_results]:
+                result_videos.append(video_id)
+            
+            print(f"Total videos found in this batch: {len(result_videos)}")
+            return result_videos
+            
+        except Exception as e:
+            print(f"Error fetching videos from playlist: {str(e)}")
+            return []
