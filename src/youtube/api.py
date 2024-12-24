@@ -229,3 +229,33 @@ class YouTubeAPI:
                 'title': f'Video_{video_id}',
                 'description': ''
             }
+    
+    def check_if_uploaded(self, title: str) -> bool:
+        """Check if a video with this title already exists on the channel"""
+        try:
+            print(f"Searching for video with title: {title}")
+            # Search for videos on your channel with this title
+            request = self.youtube.search().list(
+                part="snippet",
+                q=title,
+                type="video",
+                forMine=True,
+                maxResults=1
+            )
+            response = request.execute()
+            
+            if response.get('items'):
+                found_title = response['items'][0]['snippet']['title']
+                print(f"Found existing upload: {found_title}")
+                if found_title == title:
+                    print("Exact title match found")
+                    return True
+                else:
+                    print("Similar title found but not exact match")
+                    return False
+            
+            print("No existing upload found")
+            return False
+        except Exception as e:
+            print(f"Error checking for existing upload: {e}")
+            return False

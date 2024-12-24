@@ -81,7 +81,7 @@ class DatabaseManager:
             cursor = conn.execute("SELECT video_id FROM processed_videos")
             return set(row[0] for row in cursor.fetchall())
 
-    def get_video_status(self, video_id: str) -> dict:
+    def get_video_status(self, video_id: str) -> Optional[dict]:
         """Get detailed status of a video"""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.execute("""
@@ -104,3 +104,12 @@ class DatabaseManager:
                     'status': row[4] or 'pending'
                 }
             return None
+
+    def is_title_processed(self, title: str) -> bool:
+        """Check if a video with this title has been processed"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT 1 FROM processed_videos WHERE title = ?",
+                (title,)
+            )
+            return cursor.fetchone() is not None

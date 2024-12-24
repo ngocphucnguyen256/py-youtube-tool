@@ -38,16 +38,23 @@ class CommentParser:
         return sorted(timestamps)
     
     @staticmethod
-    def find_continuous_segments(timestamps: List[Tuple[int, str]], keywords: List[str]) -> List[Tuple[int, int, str]]:
-        """Find continuous segments that match keywords.
+    def find_continuous_segments(timestamps: List[Tuple[int, str]], keywords: List[str], exclude_keywords: List[str] = None) -> List[Tuple[int, int, str]]:
+        """Find continuous segments that match keywords and don't contain excluded keywords.
         Returns list of (start_time, end_time, description) tuples."""
         segments = []
         matched_indices = []
         
-        # First, find all timestamps that match keywords
+        # Clean and prepare exclude keywords
+        exclude_keywords = [k.strip().lower() for k in (exclude_keywords or [])]
+        
+        # First, find all timestamps that match keywords and don't contain excluded keywords
         for i, (time_sec, desc) in enumerate(timestamps):
-            if any(keyword in desc.lower() for keyword in keywords):
-                matched_indices.append(i)
+            desc_lower = desc.lower()
+            # Check if description matches any keyword
+            if any(keyword in desc_lower for keyword in keywords):
+                # Check if description contains any excluded keyword
+                if not exclude_keywords or not any(ex_keyword in desc_lower for ex_keyword in exclude_keywords):
+                    matched_indices.append(i)
         
         if not matched_indices:
             return segments
