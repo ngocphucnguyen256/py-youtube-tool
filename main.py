@@ -207,7 +207,6 @@ def process_batch_of_videos(video_ids: List[str], start_index: int, youtube, sch
     # Reload environment variables before processing
     reload_env_variables()
     
-    processed_count = 0
     if video_ids:
         print(f"\nChecking videos {start_index+1} to {start_index+len(video_ids)}...")
         for video_id in video_ids:
@@ -215,13 +214,17 @@ def process_batch_of_videos(video_ids: List[str], start_index: int, youtube, sch
                 return False
                 
             print(f"\nProcessing video {video_id}")
+            # Try to process this video
             process_and_upload_video(
                 video_id, youtube, scheduler, file_manager, 
                 downloader, processor, parser, allowed_commenters, 
                 keywords, exclude_keywords
             )
-            processed_count += 1
-            return True  # Found and processed one video
+            # Continue with next video regardless of result
+            continue
+        
+        # Return False to indicate we should check the next batch
+        return False
     
     return False  # No videos were processed in this batch
 
@@ -328,12 +331,11 @@ def main():
     # Main processing loop
     try:
         if args.immediate:
-            print("\nImmediate mode: Processing one video now...")
+            print("\nImmediate mode: Processing videos now...")
             batch_size = 50
             start_index = 0
-            found_unprocessed = False
             
-            while not found_unprocessed and not shutdown_handler.shutdown:
+            while not shutdown_handler.shutdown:
                 print(f"\nFetching videos {start_index+1} to {start_index+batch_size}...")
                 if args.channel:
                     video_ids = youtube.get_channel_videos(
@@ -352,16 +354,16 @@ def main():
                     print("\nNo more videos found")
                     break
                     
-                print(f"\nFound {len(video_ids)} videos, checking for unprocessed ones...")
-                found_unprocessed = process_batch_of_videos(
+                print(f"\nFound {len(video_ids)} videos, checking each one...")
+                process_batch_of_videos(
                     video_ids, start_index, youtube, scheduler, file_manager,
                     downloader, processor, parser, allowed_commenters, 
                     keywords, exclude_keywords, shutdown_handler
                 )
                 
-                if not found_unprocessed:
-                    start_index += batch_size
-                    print(f"\nAll videos in current batch are processed, fetching next {batch_size} videos...")
+                # Move to next batch
+                start_index += batch_size
+                print(f"\nMoving to next batch of videos...")
             
             print("\nImmediate processing complete. Switching to schedule mode...")
         
@@ -375,9 +377,8 @@ def main():
                     print("\nSchedule time reached, starting video processing...")
                     batch_size = 50
                     start_index = 0
-                    found_unprocessed = False
                     
-                    while not found_unprocessed and not shutdown_handler.shutdown:
+                    while not shutdown_handler.shutdown:
                         print(f"\nFetching videos {start_index+1} to {start_index+batch_size}...")
                         if args.channel:
                             video_ids = youtube.get_channel_videos(
@@ -396,22 +397,20 @@ def main():
                             print("\nNo more videos found")
                             break
                             
-                        print(f"\nFound {len(video_ids)} videos, checking for unprocessed ones...")
-                        found_unprocessed = process_batch_of_videos(
+                        print(f"\nFound {len(video_ids)} videos, checking each one...")
+                        process_batch_of_videos(
                             video_ids, start_index, youtube, scheduler, file_manager,
                             downloader, processor, parser, allowed_commenters, 
                             keywords, exclude_keywords, shutdown_handler
                         )
                         
-                        if not found_unprocessed:
-                            start_index += batch_size
-                            print(f"\nAll videos in current batch are processed, fetching next {batch_size} videos...")
+                        # Move to next batch
+                        start_index += batch_size
+                        print(f"\nMoving to next batch of videos...")
                     
-                    # After processing, wait a bit to avoid immediate recheck
-                    for _ in range(30):  # 5 minutes with checks every 10 seconds
-                        if shutdown_handler.shutdown:
-                            break
-                        time.sleep(10)
+                    # After processing all videos, wait for next schedule
+                    print("\nFinished processing all available videos")
+                    print("Waiting for next schedule...")
                 
                 # Short wait between checks with frequent shutdown checks
                 for _ in range(3):  # 30 seconds with checks every 10 seconds

@@ -329,3 +329,39 @@ class YouTubeAPI:
         except Exception as e:
             print(f"Error fetching videos from playlist: {str(e)}")
             return []
+    
+    def add_to_playlist(self, video_id: str, playlist_id: str) -> bool:
+        """Add a video to a playlist.
+        
+        Args:
+            video_id: The video to add
+            playlist_id: The playlist to add it to
+        """
+        try:
+            print(f"\nAdding video {video_id} to playlist {playlist_id}...")
+            
+            # Add video to playlist
+            request = self.youtube.playlistItems().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "playlistId": playlist_id,
+                        "resourceId": {
+                            "kind": "youtube#video",
+                            "videoId": video_id
+                        }
+                    }
+                }
+            )
+            response = request.execute()
+            
+            if response:
+                print("Successfully added video to playlist")
+                return True
+            else:
+                print("Failed to add video to playlist")
+                return False
+                
+        except Exception as e:
+            print(f"Error adding video to playlist: {str(e)}")
+            return False

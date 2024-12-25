@@ -65,6 +65,7 @@ class UploadScheduler:
             video_prefix = os.getenv("VIDEO_NAME_PREFIX", "[ASMR Clip]").strip()
             video_tags = os.getenv("VIDEO_TAGS", "ASMR,relaxing").split(",")
             video_tags = [tag.strip() for tag in video_tags if tag.strip()]
+            upload_playlist_id = os.getenv("UPLOAD_PLAYLIST_ID", "").strip()
             
             # Create video title with prefix
             upload_title = f"{video_prefix} {title}"
@@ -97,11 +98,19 @@ class UploadScheduler:
             
             print("\nStarting upload...")
             response = request.execute()
-            video_id = response.get("id")
+            uploaded_video_id = response.get("id")
             
-            if video_id:
-                print(f"Upload complete! Video ID: {video_id}")
-                print(f"Video URL: https://youtu.be/{video_id}")
+            if uploaded_video_id:
+                print(f"Upload complete! Video ID: {uploaded_video_id}")
+                print(f"Video URL: https://youtu.be/{uploaded_video_id}")
+                
+                # Add to playlist if configured
+                if upload_playlist_id:
+                    if self.youtube.add_to_playlist(uploaded_video_id, upload_playlist_id):
+                        print("Added video to playlist")
+                    else:
+                        print("Failed to add video to playlist")
+                
                 return True
             else:
                 print("Upload failed - no video ID in response")
