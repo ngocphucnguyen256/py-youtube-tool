@@ -7,6 +7,7 @@ from src.video.processor import VideoProcessor
 from src.utils.comment_parser import CommentParser
 from src.utils.file_manager import FileManager
 from src.utils.upload_scheduler import UploadScheduler
+from src.utils.logger import Logger
 import threading
 import time
 import signal
@@ -15,6 +16,9 @@ from datetime import datetime, timedelta
 import argparse
 from typing import List
 import glob
+import msvcrt  # For Windows keyboard input
+
+logger = Logger()
 
 class GracefulShutdown:
     def __init__(self):
@@ -23,15 +27,34 @@ class GracefulShutdown:
         signal.signal(signal.SIGTERM, self.exit_gracefully)
 
     def exit_gracefully(self, signum, frame):
-        print("\nShutdown requested...")
+        logger.log("\nShutdown requested...")
         self.shutdown = True
+
+class PauseHandler:
+    def __init__(self):
+        self.paused = False
+        self.pause_thread = threading.Thread(target=self._pause_listener, daemon=True)
+        self.pause_thread.start()
+    
+    def _pause_listener(self):
+        """Listen for spacebar press to toggle pause state."""
+        while True:
+            if msvcrt.kbhit():
+                key = msvcrt.getch()
+                if key == b' ':  # Spacebar
+                    self.paused = not self.paused
+                    if self.paused:
+                        logger.log("\nProcessing paused. Press SPACE to resume...")
+                    else:
+                        logger.log("\nProcessing resumed!")
+            time.sleep(0.1)  # Small delay to prevent high CPU usage
 
 def get_keywords_from_env() -> list:
     """Get and process keywords from .env file."""
     keywords = os.getenv("KEYWORDS", "").split(",")
     # Clean up keywords and convert to lowercase
     keywords = [k.strip().lower() for k in keywords if k.strip()]
-    print(f"Using keywords for filtering: {', '.join(keywords)}")
+    logger.log(f"Using keywords for filtering: {', '.join(keywords)}")
     return keywords
 
 def get_next_schedule_time(upload_times_str: str) -> str:
@@ -64,21 +87,21 @@ def process_and_upload_video(video_id: str, youtube, scheduler, file_manager, do
                            processor, parser, allowed_commenters, keywords, exclude_keywords):
     """Process a single video and upload immediately if successful"""
     try:
-        print("\nChecking video status...")
+        logger.log("\nChecking video status...")
         
         # Check YouTube for existing upload first
-        print("\nChecking if video was already processed...")
+        logger.log("\nChecking if video was already processed...")
         if youtube.check_if_uploaded(video_id):
-            print(f"\nVideo {video_id} was already processed, skipping...")
+            logger.log(f"\nVideo {video_id} was already processed, skipping...")
             return
         
         # Get video info
-        print("\nFetching video information...")
+        logger.log("\nFetching video information...")
         try:
             video_info = youtube.get_video_info(video_id)
-            print(f"Video title: {video_info['title']}")
+            logger.log(f"Video title: {video_info['title']}")
         except Exception as e:
-            print(f"Error getting video info: {e}")
+            logger.log(f"Error getting video info: {e}")
             video_info = {'title': f'Video_{video_id}'}
 
         # Check for existing files
@@ -89,7 +112,7 @@ def process_and_upload_video(video_id: str, youtube, scheduler, file_manager, do
         timestamps = parser.extract_timestamps(comments)
         
         if not timestamps:
-            print("No timestamps found in comments, skipping video")
+            logger.log("No timestamps found in comments, skipping video")
             return
         
         # Save timestamps
@@ -99,50 +122,50 @@ def process_and_upload_video(video_id: str, youtube, scheduler, file_manager, do
         # Download video if not already downloaded
         video_path = existing_video if existing_video else downloader.download_video(video_id)
         if not video_path:
-            print("Failed to download video, skipping...")
+            logger.log("Failed to download video, skipping...")
             return
         
         # Find segments to clip
         segments = parser.find_continuous_segments(timestamps, keywords, exclude_keywords)
         
         if not segments:
-            print("No segments found after filtering with keywords and exclusions")
+            logger.log("No segments found after filtering with keywords and exclusions")
             return
         
         # Process segments and create clips
         clip_paths, compilation_path = processor.process_segments(video_path, segments, video_id)
         
         if compilation_path:
-            print(f"\nCreated compilation from {len(clip_paths)} clips")
+            logger.log(f"\nCreated compilation from {len(clip_paths)} clips")
             try:
                 video_info = youtube.get_video_info(video_id)
             except Exception as e:
-                print(f"Error getting video info: {e}")
+                logger.log(f"Error getting video info: {e}")
                 video_info = {'title': f'Video_{video_id}'}
             
             # Upload immediately
             if scheduler.upload_video(video_id, video_info['title'], compilation_path):
-                print("Upload completed successfully")
+                logger.log("Upload completed successfully")
                 # Show next schedule time
                 next_schedule = get_next_schedule_time(os.getenv('UPLOAD_TIMES', '10:00,18:00'))
-                print(f"\n{next_schedule}")
+                logger.log(f"\n{next_schedule}")
             else:
-                print("Upload failed, will try again later")
+                logger.log("Upload failed, will try again later")
             
             # Clean up individual clips
             for clip_path in clip_paths:
                 try:
                     os.remove(clip_path)
-                    print(f"Cleaned up clip: {os.path.basename(clip_path)}")
+                    logger.log(f"Cleaned up clip: {os.path.basename(clip_path)}")
                 except Exception as e:
-                    print(f"Failed to remove clip {clip_path}: {e}")
+                    logger.log(f"Failed to remove clip {clip_path}: {e}")
         
         # Clean up downloaded video if we downloaded it
         if not existing_video:
             file_manager.cleanup_video(video_path)
         
     except Exception as e:
-        print(f"Error processing video {video_id}: {str(e)}")
+        logger.log(f"Error processing video {video_id}: {str(e)}")
 
 def get_min_schedule_gap(upload_times_str: str) -> int:
     """Calculate minimum gap between scheduled uploads in minutes"""
@@ -182,38 +205,45 @@ def reload_env_variables():
     """Reload environment variables from .env file."""
     try:
         load_dotenv(override=True)
-        print("\nReloaded environment variables")
+        logger.log("\nReloaded environment variables")
         
         # Get and display current settings
-        print("\nCurrent settings:")
-        print(f"Channel ID: {os.getenv('CHANNEL_ID')}")
-        print(f"Upload Privacy: {os.getenv('UPLOAD_PRIVACY', 'private')}")
-        print(f"Schedule Times: {os.getenv('UPLOAD_TIMES', '10:00,18:00')}")
-        print(f"Video Name Prefix: {os.getenv('VIDEO_NAME_PREFIX', '[ASMR]')}")
+        logger.log("\nCurrent settings:")
+        logger.log(f"Channel ID: {os.getenv('CHANNEL_ID')}")
+        logger.log(f"Upload Privacy: {os.getenv('UPLOAD_PRIVACY', 'private')}")
+        logger.log(f"Schedule Times: {os.getenv('UPLOAD_TIMES', '10:00,18:00')}")
+        logger.log(f"Video Name Prefix: {os.getenv('VIDEO_NAME_PREFIX', '[ASMR]')}")
         
         keywords = get_keywords_from_env()
         exclude_keywords = [k.strip() for k in os.getenv("KEYWORDS_EXCLUDE", "").split(",") if k.strip()]
-        print(f"Exclude Keywords: {', '.join(exclude_keywords)}")
+        logger.log(f"Exclude Keywords: {', '.join(exclude_keywords)}")
         
         return True
     except Exception as e:
-        print(f"\nError reloading environment variables: {e}")
+        logger.log(f"\nError reloading environment variables: {e}")
         return False
 
 def process_batch_of_videos(video_ids: List[str], start_index: int, youtube, scheduler, file_manager, 
                           downloader, processor, parser, allowed_commenters, 
-                          keywords, exclude_keywords, shutdown_handler) -> bool:
+                          keywords, exclude_keywords, shutdown_handler, pause_handler) -> bool:
     """Process a batch of videos and return True if any video was processed."""
     # Reload environment variables before processing
     reload_env_variables()
     
     if video_ids:
-        print(f"\nChecking videos {start_index+1} to {start_index+len(video_ids)}...")
+        logger.log(f"\nChecking videos {start_index+1} to {start_index+len(video_ids)}...")
         for video_id in video_ids:
             if shutdown_handler.shutdown:
                 return False
                 
-            print(f"\nProcessing video {video_id}")
+            # Check for pause
+            while pause_handler.paused and not shutdown_handler.shutdown:
+                time.sleep(1)
+                
+            if shutdown_handler.shutdown:
+                return False
+                
+            logger.log(f"\nProcessing video {video_id}")
             # Try to process this video
             process_and_upload_video(
                 video_id, youtube, scheduler, file_manager, 
@@ -246,9 +276,9 @@ def validate_env_variables():
             missing.append(f"{var} ({description})")
     
     if missing:
-        print("\nError: Missing required environment variables:")
+        logger.log("\nError: Missing required environment variables:")
         for var in missing:
-            print(f"- {var}")
+            logger.log(f"- {var}")
         return False
     
     return True
@@ -261,30 +291,32 @@ def cleanup_temp_files():
         "*.temp.*"
     ]
     
-    print("\nCleaning up temporary files...")
+    logger.log("\nCleaning up temporary files...")
     for pattern in temp_patterns:
         for file_path in glob.glob(pattern):
             try:
                 os.remove(file_path)
-                print(f"Removed: {file_path}")
+                logger.log(f"Removed: {file_path}")
             except Exception as e:
-                print(f"Failed to remove {file_path}: {e}")
+                logger.log(f"Failed to remove {file_path}: {e}")
 
 def main():
     args = parse_args()
     shutdown_handler = GracefulShutdown()
+    pause_handler = PauseHandler()
     
-    print("Starting application...")
+    logger.log("Starting application...")
+    logger.log("Press SPACE to pause/resume processing")
     load_dotenv()
-    print("Environment variables loaded")
+    logger.log("Environment variables loaded")
     
     # Validate environment variables
     if not validate_env_variables():
-        print("\nPlease set all required variables in .env file")
+        logger.log("\nPlease set all required variables in .env file")
         return
     
     # Initialize components
-    print("\nInitializing components...")
+    logger.log("\nInitializing components...")
     youtube = YouTubeAPI(
         client_secrets_file="client_secrets.json",
         api_scopes=[
@@ -299,7 +331,7 @@ def main():
     downloader = VideoDownloader()
     processor = VideoProcessor()
     parser = CommentParser()
-    print("All components initialized")
+    logger.log("All components initialized")
     
     # Get configuration from env
     channel_id = os.getenv("CHANNEL_ID")
@@ -312,31 +344,38 @@ def main():
     privacy_status = os.getenv("UPLOAD_PRIVACY", "private")
     
     if args.channel and not channel_id:
-        print("Error: Please set CHANNEL_ID in .env file when using --channel flag")
+        logger.log("Error: Please set CHANNEL_ID in .env file when using --channel flag")
         return
     elif not args.channel and not playlist_id:
-        print("Error: Please set PLAYLIST_ID in .env file")
+        logger.log("Error: Please set PLAYLIST_ID in .env file")
         return
     
     # Start scheduler for download timing only
     scheduler = UploadScheduler(youtube)
     
-    print("\nStarting schedule monitoring...")
-    print(f"Configured schedule times: {os.getenv('UPLOAD_TIMES', '10:00,18:00')}")
+    logger.log("\nStarting schedule monitoring...")
+    logger.log(f"Configured schedule times: {os.getenv('UPLOAD_TIMES', '10:00,18:00')}")
     
     # Show initial next schedule time
     next_schedule = get_next_schedule_time(os.getenv('UPLOAD_TIMES', '10:00,18:00'))
-    print(f"\n{next_schedule}")
+    logger.log(f"\n{next_schedule}")
     
     # Main processing loop
     try:
         if args.immediate:
-            print("\nImmediate mode: Processing videos now...")
+            logger.log("\nImmediate mode: Processing videos now...")
             batch_size = 50
             start_index = 0
             
             while not shutdown_handler.shutdown:
-                print(f"\nFetching videos {start_index+1} to {start_index+batch_size}...")
+                # Check for pause
+                while pause_handler.paused and not shutdown_handler.shutdown:
+                    time.sleep(1)
+                    
+                if shutdown_handler.shutdown:
+                    break
+                    
+                logger.log(f"\nFetching videos {start_index+1} to {start_index+batch_size}...")
                 if args.channel:
                     video_ids = youtube.get_channel_videos(
                         channel_id.strip(), 
@@ -351,21 +390,21 @@ def main():
                     )
                 
                 if not video_ids:
-                    print("\nNo more videos found")
+                    logger.log("\nNo more videos found")
                     break
                     
-                print(f"\nFound {len(video_ids)} videos, checking each one...")
+                logger.log(f"\nFound {len(video_ids)} videos, checking each one...")
                 process_batch_of_videos(
                     video_ids, start_index, youtube, scheduler, file_manager,
                     downloader, processor, parser, allowed_commenters, 
-                    keywords, exclude_keywords, shutdown_handler
+                    keywords, exclude_keywords, shutdown_handler, pause_handler
                 )
                 
                 # Move to next batch
                 start_index += batch_size
-                print(f"\nMoving to next batch of videos...")
+                logger.log(f"\nMoving to next batch of videos...")
             
-            print("\nImmediate processing complete. Switching to schedule mode...")
+            logger.log("\nImmediate processing complete. Switching to schedule mode...")
         
         # Regular schedule loop
         while not shutdown_handler.shutdown:
@@ -373,13 +412,21 @@ def main():
                 if shutdown_handler.shutdown:
                     break
                 
+                # Check for pause
+                while pause_handler.paused and not shutdown_handler.shutdown:
+                    time.sleep(1)
+                
                 if scheduler.is_schedule_time():
-                    print("\nSchedule time reached, starting video processing...")
+                    logger.log("\nSchedule time reached, starting video processing...")
                     batch_size = 50
                     start_index = 0
                     
                     while not shutdown_handler.shutdown:
-                        print(f"\nFetching videos {start_index+1} to {start_index+batch_size}...")
+                        # Check for pause
+                        while pause_handler.paused and not shutdown_handler.shutdown:
+                            time.sleep(1)
+                            
+                        logger.log(f"\nFetching videos {start_index+1} to {start_index+batch_size}...")
                         if args.channel:
                             video_ids = youtube.get_channel_videos(
                                 channel_id.strip(), 
@@ -394,23 +441,23 @@ def main():
                             )
                         
                         if not video_ids:
-                            print("\nNo more videos found")
+                            logger.log("\nNo more videos found")
                             break
                             
-                        print(f"\nFound {len(video_ids)} videos, checking each one...")
+                        logger.log(f"\nFound {len(video_ids)} videos, checking each one...")
                         process_batch_of_videos(
                             video_ids, start_index, youtube, scheduler, file_manager,
                             downloader, processor, parser, allowed_commenters, 
-                            keywords, exclude_keywords, shutdown_handler
+                            keywords, exclude_keywords, shutdown_handler, pause_handler
                         )
                         
                         # Move to next batch
                         start_index += batch_size
-                        print(f"\nMoving to next batch of videos...")
+                        logger.log(f"\nMoving to next batch of videos...")
                     
                     # After processing all videos, wait for next schedule
-                    print("\nFinished processing all available videos")
-                    print("Waiting for next schedule...")
+                    logger.log("\nFinished processing all available videos")
+                    logger.log("Waiting for next schedule...")
                 
                 # Short wait between checks with frequent shutdown checks
                 for _ in range(3):  # 30 seconds with checks every 10 seconds
@@ -419,7 +466,7 @@ def main():
                     time.sleep(10)
                     
             except Exception as e:
-                print(f"\nError in main loop: {str(e)}")
+                logger.log(f"\nError in main loop: {str(e)}")
                 if not shutdown_handler.shutdown:
                     # Wait with shutdown checks
                     for _ in range(180):  # 30 minutes with checks every 10 seconds
@@ -428,9 +475,9 @@ def main():
                         time.sleep(10)
     
     finally:
-        print("\nShutting down gracefully...")
+        logger.log("\nShutting down gracefully...")
         cleanup_temp_files()
-        print("Cleanup complete. Goodbye!")
+        logger.log("Cleanup complete. Goodbye!")
 
 if __name__ == "__main__":
     os.environ["OAUTHLIB_INSECURE_TRANSPORT"] = "1"

@@ -1,17 +1,16 @@
-import logging
 from datetime import datetime
-import os
 
-def setup_logger():
-    log_file = f"logs/youtube_reup_{datetime.now():%Y%m%d_%H%M%S}.log"
-    os.makedirs('logs', exist_ok=True)
+class Logger:
+    """Custom logger that adds timestamps to messages."""
     
-    logging.basicConfig(
-        level=logging.INFO,
-        format='%(asctime)s - %(levelname)s - %(message)s',
-        handlers=[
-            logging.FileHandler(log_file),
-            logging.StreamHandler()
-        ]
-    )
-    return logging.getLogger(__name__) 
+    @staticmethod
+    def log(message: str, end: str = "\n"):
+        """Log a message with timestamp."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        print(f"[{timestamp}] {message}", end=end)
+    
+    @staticmethod
+    def progress(message: str):
+        """Log a progress message with timestamp, overwriting the current line."""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        print(f"\r[{timestamp}] {message}", end="") 

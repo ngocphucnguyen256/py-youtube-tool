@@ -1,16 +1,21 @@
-# YouTube ASMR Video Clipper
+# YouTube Video Manager
 
-This application automatically clips and reuploads specific segments from ASMR videos based on timestamps in comments.
+A Python application for managing YouTube videos, including compilation creation and video re-uploading.
 
 ## Features
-- Automatically fetches videos from specified YouTube playlist or channel
-- Extracts timestamps from comments
-- Creates high-quality compilations from selected segments
-- Maintains original video quality settings
-- Advanced keyword filtering with inclusion and exclusion
-- Scheduled or immediate processing modes
-- Smart duplicate detection using YouTube API
-- Automatic cleanup of temporary files
+
+### Main Script (main.py)
+- Create compilations from videos with timestamps in comments
+- Fetch videos from a channel or playlist
+- Schedule uploads at specific times
+- Filter content based on keywords
+- Add uploaded videos to a playlist
+
+### Re-upload Script (reup.py)
+- Re-upload any YouTube video to your channel
+- Customize title and privacy settings
+- Automatically add to a designated playlist
+- Preserve video quality and metadata
 
 ## Setup
 
@@ -19,103 +24,71 @@ This application automatically clips and reuploads specific segments from ASMR v
 pip install -r requirements.txt
 ```
 
-2. Install FFmpeg (required for video processing):
-```bash
-# Windows (using chocolatey)
-choco install ffmpeg
-
-# Mac
-brew install ffmpeg
-
-# Ubuntu/Debian
-sudo apt-get install ffmpeg
-```
-
-3. Set up YouTube API credentials:
-- Go to [Google Cloud Console](https://console.cloud.google.com)
-- Create a new project
+2. Set up YouTube API:
+- Create a project in Google Cloud Console
 - Enable YouTube Data API v3
 - Create OAuth 2.0 credentials
-- Download the client secrets file and save it as `client_secrets.json`
+- Download client secrets file as `client_secrets.json`
 
-4. Create `.env` file from template:
-```bash
-cp .env-example .env
+3. Configure environment variables:
+- Copy `.env-example` to `.env`
+- Fill in your configuration values
+
+## Configuration
+
+### Main Compilation Settings
+```env
+# YouTube API Configuration
+CHANNEL_ID=your_channel_id          # Channel to fetch videos from
+PLAYLIST_ID=your_playlist_id        # Playlist to fetch videos from
+
+# Compilation Settings
+UPLOAD_PRIVACY=private              # private, unlisted, or public
+UPLOAD_TIMES=10:00,18:00           # Schedule times
+VIDEO_NAME_PREFIX=[ASMR]           # Prefix for uploaded videos
+VIDEO_TAGS=ASMR,relaxing           # Tags for uploaded videos
+TIMESTAMP_COMMENTERS=user1,user2    # Users who post timestamps
+KEYWORDS=keyword1,keyword2         # Keywords to include
+KEYWORDS_EXCLUDE=word1,word2       # Keywords to exclude
 ```
 
-5. Configure your `.env` file:
+### Re-upload Settings
 ```env
-# Source to process (choose one)
-PLAYLIST_ID=              # YouTube playlist ID to fetch videos from
-CHANNEL_ID=              # Optional: Channel ID or @handle (for --channel mode)
-
-# Processing settings
-TIMESTAMP_COMMENTERS=      # Users who post timestamps
-KEYWORDS=                  # Keywords to look for in timestamps
-KEYWORDS_EXCLUDE=          # Keywords to exclude from matched segments
-
-# Upload settings
-UPLOAD_PRIVACY=private     # private, unlisted, or public
-VIDEO_NAME_PREFIX=[ASMR]   # Prefix for uploaded videos
-VIDEO_TAGS=ASMR, relaxing  # Common tags for all videos
-
-# Schedule settings
-UPLOAD_TIMES=10:00,18:00  # When to check for new videos
+# Re-upload Settings
+REUP_PRIVACY=private               # Default privacy setting
+REUP_PREFIX=[Reup]                # Prefix for re-uploaded videos
+REUP_TAGS=reupload,video          # Tags for re-uploaded videos
+REUP_PLAYLIST_ID=playlist_id      # Playlist for re-uploads
 ```
 
 ## Usage
 
-### Running Modes
-
-1. Schedule Mode (default, using playlist):
+### Main Compilation Script
 ```bash
+# Process videos from playlist
 python main.py
-```
-- Runs according to times in UPLOAD_TIMES
-- Checks for new videos at scheduled times
-- Processes and uploads automatically
 
-2. Schedule Mode (using channel):
-```bash
+# Process videos from channel
 python main.py --channel
-```
-- Same as above but fetches from channel instead of playlist
-- Note: Can only access public videos when using channel mode
 
-3. Immediate Mode:
+# Process immediately without waiting for schedule
+python main.py -i
+```
+
+### Re-upload Script
 ```bash
-python main.py -i  # For playlist
-python main.py -i --channel  # For channel
+# Basic re-upload
+python reup.py VIDEO_URL
+
+# Re-upload with custom title
+python reup.py VIDEO_URL --title "Custom Title"
+
+# Re-upload with specific privacy
+python reup.py VIDEO_URL --privacy unlisted
 ```
-- Processes one video immediately
-- Then switches to schedule mode
-- Useful for testing or one-off processing
 
-### Keyword Filtering
-
-The application uses two levels of keyword filtering:
-1. `KEYWORDS`: Segments must contain at least one of these keywords
-2. `KEYWORDS_EXCLUDE`: Segments containing any of these keywords are excluded
-
-This allows for precise control over which segments are included in the compilation.
-
-## Process Flow
-1. Fetches videos from specified playlist or channel
-2. Checks for existing uploads on YouTube
-3. Downloads video if new
-4. Extracts timestamps from comments
-5. Filters segments using keywords and exclusions
-6. Creates clips based on filtered segments
-7. Merges clips into compilation (preserving original quality)
-8. Uploads to YouTube
-9. Cleans up temporary files
-
-## Shutdown
-- Press Ctrl+C for graceful shutdown
-- Current operations will complete before exit
-- Temporary files are cleaned up automatically
-
-## Files
-- `main.py`: Main application script
-- `.env`: Configuration file
-- `client_secrets.json`: YouTube API credentials
+## Notes
+- The application requires YouTube API authentication
+- Respects YouTube's terms of service and API quotas
+- Cleans up temporary files automatically
+- Logs include timestamps for better tracking

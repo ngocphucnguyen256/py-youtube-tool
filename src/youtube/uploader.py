@@ -124,7 +124,7 @@ class YouTubeUploader:
             f"{description}\n\n"
             f"Clip from original video: https://youtu.be/{original_video_id}\n"
             f"Time segment: {start_time}-{end_time}\n\n"
-            "This clip was automatically generated based on timestamps in comments."
+            "support anchor on douyu: https://www.douyu.com/5092355"
         )
         
         # Combine default tags with segment-specific tags

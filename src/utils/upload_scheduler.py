@@ -1,6 +1,9 @@
 import os
 from datetime import datetime
 from typing import Optional
+from src.utils.logger import Logger
+
+logger = Logger()
 
 class UploadScheduler:
     """Handles video upload scheduling."""
@@ -49,12 +52,12 @@ class UploadScheduler:
                     waiting_minutes += 24 * 60  # Add 24 hours
                 waiting_hours = waiting_minutes // 60
                 waiting_minutes = waiting_minutes % 60
-                print(f"\rCurrent time: {current_str} | Next schedule: {next_str} | Waiting: {waiting_hours}h {waiting_minutes}m", end="")
+                logger.progress(f"Current time: {current_str} | Next schedule: {next_str} | Waiting: {waiting_hours}h {waiting_minutes}m")
             
             return False
             
         except Exception as e:
-            print(f"Error checking schedule: {str(e)}")
+            logger.log(f"Error checking schedule: {str(e)}")
             return False
     
     def upload_video(self, video_id: str, title: str, file_path: str) -> bool:
@@ -75,7 +78,7 @@ class UploadScheduler:
             # Create description
             description = (
                 f"Original video: https://youtu.be/{video_id}\n\n"
-                "This compilation was automatically generated based on timestamps in comments."
+                "support anchor on douyu: https://www.douyu.com/5092355"
             )
             
             # Upload video using the YouTube API instance
@@ -96,26 +99,26 @@ class UploadScheduler:
                 media_body=file_path
             )
             
-            print("\nStarting upload...")
+            logger.log("\nStarting upload...")
             response = request.execute()
             uploaded_video_id = response.get("id")
             
             if uploaded_video_id:
-                print(f"Upload complete! Video ID: {uploaded_video_id}")
-                print(f"Video URL: https://youtu.be/{uploaded_video_id}")
+                logger.log(f"Upload complete! Video ID: {uploaded_video_id}")
+                logger.log(f"Video URL: https://youtu.be/{uploaded_video_id}")
                 
                 # Add to playlist if configured
                 if upload_playlist_id:
                     if self.youtube.add_to_playlist(uploaded_video_id, upload_playlist_id):
-                        print("Added video to playlist")
+                        logger.log("Added video to playlist")
                     else:
-                        print("Failed to add video to playlist")
+                        logger.log("Failed to add video to playlist")
                 
                 return True
             else:
-                print("Upload failed - no video ID in response")
+                logger.log("Upload failed - no video ID in response")
                 return False
             
         except Exception as e:
-            print(f"Error uploading video: {str(e)}")
+            logger.log(f"Error uploading video: {str(e)}")
             return False
