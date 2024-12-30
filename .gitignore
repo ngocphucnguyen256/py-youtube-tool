@@ -32,3 +32,4 @@ temp_concat_*.txt
 # OS specific
 .DS_Store
 Thumbs.db
+/downloaded_streams

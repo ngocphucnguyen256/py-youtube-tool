@@ -92,3 +92,13 @@ python reup.py VIDEO_URL --privacy unlisted
 - Respects YouTube's terms of service and API quotas
 - Cleans up temporary files automatically
 - Logs include timestamps for better tracking
+
+
+
+
+
+for upload_streams:
+-save format:
+
+C:\Users\ngocp\Documents\Projects\youtube-reup\downloaded_streams\{owner}\{year}-{month}-{date} {hour}-{min}-{sec} {title}.mp4
+
