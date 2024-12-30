@@ -98,6 +98,9 @@ python reup.py VIDEO_URL --privacy unlisted
 
 
 for upload_streams:
+
+https://github.com/WhiteMinds/LiveAutoRecord
+
 -save format:
 
 C:\Users\ngocp\Documents\Projects\youtube-reup\downloaded_streams\{owner}\{year}-{month}-{date} {hour}-{min}-{sec} {title}.mp4
