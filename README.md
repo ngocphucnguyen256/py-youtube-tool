@@ -37,30 +37,8 @@ pip install -r requirements.txt
 ## Configuration
 
 ### Main Compilation Settings
-```env
-# YouTube API Configuration
-CHANNEL_ID=your_channel_id          # Channel to fetch videos from
-PLAYLIST_ID=your_playlist_id        # Playlist to fetch videos from
-
-# Compilation Settings
-UPLOAD_PRIVACY=private              # private, unlisted, or public
-UPLOAD_TIMES=10:00,18:00           # Schedule times
-VIDEO_NAME_PREFIX=[ASMR]           # Prefix for uploaded videos
-VIDEO_TAGS=ASMR,relaxing           # Tags for uploaded videos
-TIMESTAMP_COMMENTERS=user1,user2    # Users who post timestamps
-KEYWORDS=keyword1,keyword2         # Keywords to include
-KEYWORDS_EXCLUDE=word1,word2       # Keywords to exclude
+```env-examples
 ```
-
-### Re-upload Settings
-```env
-# Re-upload Settings
-REUP_PRIVACY=private               # Default privacy setting
-REUP_PREFIX=[Reup]                # Prefix for re-uploaded videos
-REUP_TAGS=reupload,video          # Tags for re-uploaded videos
-REUP_PLAYLIST_ID=playlist_id      # Playlist for re-uploads
-```
-
 ## Usage
 
 ### Main Compilation Script
@@ -94,10 +72,12 @@ python reup.py VIDEO_URL --privacy unlisted
 - Logs include timestamps for better tracking
 
 
+## for upload_streams:
 
-
-
-for upload_streams:
+# upload streams Script
+```bash
+python upload_streams.py
+```
 
 https://github.com/WhiteMinds/LiveAutoRecord
 
