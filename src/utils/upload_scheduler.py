@@ -78,7 +78,7 @@ class UploadScheduler:
             # Create description
             description = (
                 f"Original video: https://youtu.be/{video_id}\n\n"
-                "support anchor on douyu: https://www.douyu.com/5092355"
+                "support anchor on douyu: douyu.com/5092355"
             )
             
             # Upload video using the YouTube API instance

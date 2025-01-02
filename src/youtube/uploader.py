@@ -124,7 +124,7 @@ class YouTubeUploader:
             f"{description}\n\n"
             f"Clip from original video: https://youtu.be/{original_video_id}\n"
             f"Time segment: {start_time}-{end_time}\n\n"
-            "support anchor on douyu: https://www.douyu.com/5092355"
+            "support anchor on douyu: douyu.com/5092355"
         )
         
         # Combine default tags with segment-specific tags
