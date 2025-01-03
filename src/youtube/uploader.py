@@ -4,6 +4,7 @@ from dotenv import load_dotenv
 from googleapiclient.http import MediaFileUpload
 from googleapiclient.discovery import build
 from google_auth_oauthlib.flow import InstalledAppFlow
+from datetime import datetime
 
 class YouTubeUploader:
     """Handles uploading videos to YouTube."""
@@ -34,6 +35,47 @@ class YouTubeUploader:
         
         self.youtube = build('youtube', 'v3', credentials=credentials)
     
+    def get_content_title_from_filename(self, filename):
+        """Extract the content title from filename (part after timestamps)"""
+        # Skip date/time part for stream files
+        if filename[:10].replace('-', '').isdigit():
+            return None
+        
+        # For compilation files (format: videoId_timestamps_ContentTitle.mp4)
+        parts = filename.split('_')
+        if len(parts) < 4:  # Need at least videoId, start time, end time, and content
+            return None
+        
+        # Join all parts after the timestamps, remove .mp4
+        content_title = '_'.join(parts[3:]).replace('.mp4', '')
+        return content_title
+
+    def find_most_common_content(self, filenames):
+        """Find the most common content title from a list of filenames"""
+        content_titles = {}
+        max_size = 0
+        most_common_title = None
+
+        for filename in filenames:
+            content_title = self.get_content_title_from_filename(filename)
+            if not content_title:
+                continue
+            
+            # Get file size
+            file_size = os.path.getsize(filename)
+            
+            if content_title not in content_titles:
+                content_titles[content_title] = file_size
+            else:
+                content_titles[content_title] += file_size
+
+            # Update most common based on total file size
+            if content_titles[content_title] > max_size:
+                max_size = content_titles[content_title]
+                most_common_title = content_title
+
+        return most_common_title
+
     def upload_video(
         self,
         file_path: str,
@@ -63,11 +105,19 @@ class YouTubeUploader:
         print(f"Privacy: {privacy_status}")
         
         try:
+            # Format tags for description
+            tags_str = ""
+            if tags:
+                tags_str = "\nTags: #" + " #".join(tag.replace(" ", "") for tag in tags if tag)
+            
+            # Add tags to description
+            full_description = f"{description}\n{tags_str}"
+            
             # Prepare video metadata
             body = {
                 'snippet': {
                     'title': title,
-                    'description': description,
+                    'description': full_description,
                     'tags': tags or [],
                     'categoryId': '22'  # People & Blogs category
                 },

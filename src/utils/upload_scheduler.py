@@ -1,124 +1,129 @@
-import os
+from src.youtube.uploader import YouTubeUploader
 from datetime import datetime
+import os
+from dotenv import load_dotenv
 from typing import Optional
 from src.utils.logger import Logger
+from googleapiclient.http import MediaFileUpload
 
 logger = Logger()
 
 class UploadScheduler:
     """Handles video upload scheduling."""
     
-    def __init__(self, youtube):
-        self.youtube = youtube
-    
-    def is_schedule_time(self) -> bool:
-        """Check if current time matches any schedule time."""
+    def __init__(self, youtube_api):
+        """Initialize with YouTubeAPI instance"""
+        self.youtube = youtube_api
+        
+        # Load scheduler-specific settings
+        load_dotenv()
+        self.upload_times = [
+            datetime.strptime(t.strip(), '%H:%M').time() 
+            for t in os.getenv('UPLOAD_TIMES', '9:00,15:00').split(',')
+        ]
+        self.playlist_id = os.getenv('UPLOAD_PLAYLIST_ID')
+
+    def upload_video(self, file_path: str, title: str, description: str, privacy_status: str = "private", tags: Optional[list] = None):
+        """Compatibility method for video uploads"""
         try:
-            current_time = datetime.now()
-            schedule_times = os.getenv("UPLOAD_TIMES", "10:00,18:00").split(",")
-            
-            for time_str in schedule_times:
-                hour, minute = map(int, time_str.strip().split(":"))
-                if current_time.hour == hour and current_time.minute == minute:
-                    return True
-            
-            # Print current time and next schedule
-            current_str = current_time.strftime("%H:%M:%S")
-            next_time = None
-            next_hour = None
-            next_minute = None
-            
-            # Find next schedule time
-            for time_str in schedule_times:
-                hour, minute = map(int, time_str.strip().split(":"))
-                schedule_time = current_time.replace(hour=hour, minute=minute, second=0, microsecond=0)
-                
-                if schedule_time > current_time:
-                    if next_time is None or schedule_time < next_time:
-                        next_time = schedule_time
-                        next_hour = hour
-                        next_minute = minute
-            
-            # If no time found today, use first time tomorrow
-            if next_time is None and schedule_times:
-                hour, minute = map(int, schedule_times[0].strip().split(":"))
-                next_hour = hour
-                next_minute = minute
-            
-            if next_hour is not None:
-                next_str = f"{next_hour:02d}:{next_minute:02d}"
-                waiting_minutes = (next_hour * 60 + next_minute) - (current_time.hour * 60 + current_time.minute)
-                if waiting_minutes < 0:
-                    waiting_minutes += 24 * 60  # Add 24 hours
-                waiting_hours = waiting_minutes // 60
-                waiting_minutes = waiting_minutes % 60
-                logger.progress(f"Current time: {current_str} | Next schedule: {next_str} | Waiting: {waiting_hours}h {waiting_minutes}m")
-            
-            return False
-            
-        except Exception as e:
-            logger.log(f"Error checking schedule: {str(e)}")
-            return False
-    
-    def upload_video(self, video_id: str, title: str, file_path: str) -> bool:
-        """Upload a video."""
-        try:
-            # Get upload settings from environment
-            privacy_status = os.getenv("UPLOAD_PRIVACY", "private")
-            video_prefix = os.getenv("VIDEO_NAME_PREFIX", "[ASMR Clip]").strip()
-            video_tags = os.getenv("VIDEO_TAGS", "ASMR,relaxing").split(",")
-            video_tags = [tag.strip() for tag in video_tags if tag.strip()]
-            upload_playlist_id = os.getenv("UPLOAD_PLAYLIST_ID", "").strip()
-            
-            # Create video title with prefix
-            upload_title = f"{video_prefix} {title}"
-            if len(upload_title) > 100:  # YouTube title length limit
-                upload_title = upload_title[:97] + "..."
-            
-            # Create description
-            description = (
-                f"Original video: https://youtu.be/{video_id}\n\n"
-                "support anchor on douyu: douyu.com/5092355"
-            )
-            
-            # Upload video using the YouTube API instance
-            request = self.youtube.youtube.videos().insert(
+            # Upload using YouTube API
+            request = self.youtube.videos().insert(
                 part="snippet,status",
                 body={
                     "snippet": {
-                        "title": upload_title,
+                        "title": title,
                         "description": description,
-                        "tags": video_tags,
-                        "categoryId": "22"  # People & Blogs
+                        "tags": tags or [],
+                        "categoryId": "22"
                     },
                     "status": {
                         "privacyStatus": privacy_status,
                         "selfDeclaredMadeForKids": False
                     }
                 },
-                media_body=file_path
+                media_body=MediaFileUpload(
+                    file_path,
+                    chunksize=1024*1024,
+                    resumable=True
+                )
             )
             
-            logger.log("\nStarting upload...")
-            response = request.execute()
-            uploaded_video_id = response.get("id")
+            # Execute upload with progress tracking
+            response = None
+            while response is None:
+                status, response = request.next_chunk()
+                if status:
+                    progress = int(status.progress() * 100)
+                    logger.progress(f"Upload progress: {progress}%")
             
-            if uploaded_video_id:
-                logger.log(f"Upload complete! Video ID: {uploaded_video_id}")
-                logger.log(f"Video URL: https://youtu.be/{uploaded_video_id}")
-                
-                # Add to playlist if configured
-                if upload_playlist_id:
-                    if self.youtube.add_to_playlist(uploaded_video_id, upload_playlist_id):
-                        logger.log("Added video to playlist")
-                    else:
-                        logger.log("Failed to add video to playlist")
-                
-                return True
-            else:
-                logger.log("Upload failed - no video ID in response")
-                return False
+            video_id = response['id']
+            logger.log(f"Upload complete! Video ID: {video_id}")
+            
+            # Add to playlist if configured
+            if self.playlist_id:
+                self.youtube.playlistItems().insert(
+                    part="snippet",
+                    body={
+                        "snippet": {
+                            "playlistId": self.playlist_id,
+                            "resourceId": {
+                                "kind": "youtube#video",
+                                "videoId": video_id
+                            }
+                        }
+                    }
+                ).execute()
+                logger.log(f"Added to playlist: {self.playlist_id}")
+            
+            return video_id
             
         except Exception as e:
             logger.log(f"Error uploading video: {str(e)}")
-            return False
+            return None
+
+    def is_schedule_time(self) -> bool:
+        """Check if current time matches any schedule time."""
+        current_time = datetime.now()
+        
+        for upload_time in self.upload_times:
+            if current_time.hour == upload_time.hour and current_time.minute == upload_time.minute:
+                return True
+        
+        # Print current time and next schedule
+        current_str = current_time.strftime("%H:%M:%S")
+        next_time = None
+        
+        # Find next schedule time
+        for upload_time in self.upload_times:
+            schedule_time = current_time.replace(
+                hour=upload_time.hour, 
+                minute=upload_time.minute, 
+                second=0, 
+                microsecond=0
+            )
+            
+            if schedule_time > current_time:
+                if next_time is None or schedule_time < next_time:
+                    next_time = schedule_time
+        
+        # If no time found today, use first time tomorrow
+        if next_time is None and self.upload_times:
+            next_time = current_time.replace(
+                day=current_time.day + 1,
+                hour=self.upload_times[0].hour,
+                minute=self.upload_times[0].minute,
+                second=0,
+                microsecond=0
+            )
+        
+        if next_time:
+            waiting_minutes = int((next_time - current_time).total_seconds() / 60)
+            waiting_hours = waiting_minutes // 60
+            waiting_minutes = waiting_minutes % 60
+            logger.progress(
+                f"Current time: {current_str} | "
+                f"Next schedule: {next_time.strftime('%H:%M')} | "
+                f"Waiting: {waiting_hours}h {waiting_minutes}m"
+            )
+        
+        return False
